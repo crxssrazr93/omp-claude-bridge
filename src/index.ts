@@ -16,6 +16,7 @@ import { PROVIDER_ID, messageContentToText, convertPiMessages } from "./convert.
 import { buildVariantModels, buildModels, claudeCodeModelId, type ContextWindowMode, type LongContextSettings, resolveModel as _resolveModel } from "./models.js";
 import { MCP_SERVER_NAME, MCP_TOOL_PREFIX, extractSkillsBlock } from "./skills.js";
 import { verifyWrittenSession as _verifyWrittenSession } from "./session-verify.js";
+import { shouldRegisterProvider } from "./provider-registration.js";
 import { extractAllToolResults as _extractAllToolResults, type McpResult } from "./extract-tool-results.js";
 import { QueryContext, ctx } from "./query-state.js";
 import { loadConfig, type Config } from "./config.js";
@@ -1705,8 +1706,12 @@ export default function (pi: ExtensionAPI) {
 	// See ACTIVE_STREAM_SIMPLE_KEY for the full mechanism.
 
 	const g = globalThis as Record<symbol, any>;
-	if (!g[ACTIVE_STREAM_SIMPLE_KEY]) {
-		// First instance: store our streamSimple and register.
+	if (shouldRegisterProvider(g[ACTIVE_STREAM_SIMPLE_KEY], streamClaudeAgentSdk)) {
+		// First activation, or this same module instance activating again after the
+		// host rebuilt its session/registry. Either way the provider has to exist in
+		// the registry the session resolves models against — see
+		// provider-registration.ts for why the same-instance case must re-register.
+		const first = !g[ACTIVE_STREAM_SIMPLE_KEY];
 		g[ACTIVE_STREAM_SIMPLE_KEY] = streamClaudeAgentSdk;
 		pi.registerProvider(PROVIDER_ID, {
 			baseUrl: "claude-bridge",
@@ -1716,6 +1721,7 @@ export default function (pi: ExtensionAPI) {
 			// Cast: pi-ai AssistantMessageEventStream diamond dep between pi-coding-agent and pi-agent-core
 			streamSimple: streamClaudeAgentSdk as any,
 		});
+		debug(`provider: registered (${first ? "first activation" : "re-registration, same instance"}, module=${moduleInstanceId})`);
 	} else {
 		// Subsequent instance (subagent session): skip registration entirely.
 		// The subagent already has access to claude-bridge models via the shared
